@@ -41,23 +41,19 @@ class ProxyMaker(
 
         throwIfNotPossibleToProxy(clazz, interfaces)
 
-        // Sometimes (e.g. in case of sealed classes) we will create the proxy for a subclass of `clazz` and not `clazz`
-        // itself.  We need to determine this early, so that the subclass will be inlined as well.
-        val actualClass = findActualClassToBeProxied(clazz)
-
-        val cancellation = inline(actualClass)
+        val cancellation = inline(clazz)
 
         val result = CancelableResult<T>(cancelBlock = cancellation)
 
         val proxyClass = try {
-            subclass(actualClass, interfaces)
+            subclass(clazz, interfaces)
         } catch (ex: Exception) {
             result.cancel()
-            throw MockKAgentException("Failed to subclass $actualClass", ex)
+            throw MockKAgentException("Failed to subclass $clazz", ex)
         }
 
         try {
-            val proxy = instantiate(actualClass, proxyClass, useDefaultConstructor, instance)
+            val proxy = instantiate(clazz, proxyClass, useDefaultConstructor, instance)
 
             handlers[proxy] = handler
             return result
@@ -109,21 +105,6 @@ class ProxyMaker(
 
             {}
         }
-    }
-
-    private fun <T : Any> findActualClassToBeProxied(
-        clazz: Class<T>,
-    ): Class<T> {
-        val kClass = clazz.kotlin
-        if (!kClass.isSealed) {
-            return clazz
-        }
-
-        val subclass = kClass.sealedSubclasses.firstOrNull()?.java
-            ?: error("Unable to create proxy for sealed class $clazz, no subclasses available")
-        log.trace("Class $clazz is sealed, will use its subclass $subclass to build proxy")
-        @Suppress("UNCHECKED_CAST")
-        return findActualClassToBeProxied(subclass) as Class<T>
     }
 
     private fun <T : Any> subclass(
